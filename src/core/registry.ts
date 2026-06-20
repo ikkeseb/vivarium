@@ -2,6 +2,7 @@ import type { SystemDef } from './types';
 import { conwaySystem } from '../systems/conway';
 import { lifeRulesSystem } from '../systems/life-rules';
 import { generationsSystem } from '../systems/generations';
+import { wireworldSystem } from '../systems/wireworld';
 import { cyclicSystem } from '../systems/cyclic';
 import { elementarySystem } from '../systems/elementary';
 import { langtonSystem } from '../systems/langton';
@@ -14,6 +15,7 @@ export const systems: ReadonlyArray<SystemDef> = [
   conwaySystem,
   lifeRulesSystem,
   generationsSystem,
+  wireworldSystem,
   cyclicSystem,
   elementarySystem,
   langtonSystem,
