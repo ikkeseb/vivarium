@@ -2,6 +2,7 @@ import type { PaintInfo, Params, RenderModel, Simulation, SystemDef } from '../c
 import { boolParam, numParam, rgba, rgbaToCss, strParam } from '../core/types';
 import { hashParts } from '../core/hash';
 import { mulberry32 } from '../core/prng';
+import { wrapState } from '../core/wrap';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Generations — multi-state outer-totalistic cellular automata.
@@ -112,11 +113,8 @@ export class GenerationsSim implements Simulation {
 
   set(x: number, y: number, v: number): void {
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-    const C = this.rule.states;
-    // Clamp into [0, C) by wrapping; keeps painted values valid palette indices.
-    let s = v % C;
-    if (s < 0) s += C;
-    this.a[y * this.width + x] = s;
+    // Wrap into [0, states) so painted values stay valid palette indices.
+    this.a[y * this.width + x] = wrapState(v, this.rule.states);
   }
 
   /** Seed only living (state-1) cells with the given probability; never dying ones. */

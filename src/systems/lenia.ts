@@ -170,12 +170,13 @@ export class LeniaSim implements Simulation {
     const amp = info.value > 0 ? Math.min(1, info.value) : 0;
     const erase = info.value === 0;
     const twoR2 = 2 * radius * radius;
+    const r2 = r * r;
     const cxi = Math.round(cx);
     const cyi = Math.round(cy);
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         const d2 = dx * dx + dy * dy;
-        if (d2 > r * r) continue;
+        if (d2 > r2) continue;
         let nx = cxi + dx;
         let ny = cyi + dy;
         if (nx < 0) nx += W;
@@ -215,12 +216,13 @@ export class LeniaSim implements Simulation {
       const amp = 0.4 + 0.6 * rng();
       const twoR2 = 2 * rad * rad;
       const ri = Math.ceil(rad);
+      const ri2 = ri * ri;
       const cxi = Math.round(cx);
       const cyi = Math.round(cy);
       for (let dy = -ri; dy <= ri; dy++) {
         for (let dx = -ri; dx <= ri; dx++) {
           const d2 = dx * dx + dy * dy;
-          if (d2 > ri * ri) continue;
+          if (d2 > ri2) continue;
           let nx = cxi + dx;
           let ny = cyi + dy;
           if (nx < 0) nx += W;
