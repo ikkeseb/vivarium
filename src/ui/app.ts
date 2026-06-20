@@ -19,7 +19,6 @@ export function mountApp(root: HTMLElement): void {
 class App {
   private renderer: CanvasRenderer;
   private canvas: HTMLCanvasElement;
-  private glCanvas: HTMLCanvasElement;
   private galleryEl: HTMLElement;
   private panelEl: HTMLElement;
   private genEl: HTMLElement;
@@ -79,10 +78,6 @@ class App {
 
     const canvas = el('canvas', { class: 'viv-canvas' });
     this.canvas = canvas;
-    // A transparent WebGL2 overlay for the additive-glow particle path. It sits
-    // on top of the 2D canvas but is pointer-events:none, so paint/pan/zoom still
-    // land on the 2D canvas below.
-    this.glCanvas = el('canvas', { class: 'viv-canvas-gl' });
     this.galleryEl = el('div', { class: 'viv-gallery-list' });
     this.panelEl = el('div', { class: 'viv-panel-body' });
     this.genEl = el('span', { class: 'viv-stat-val', text: '0' });
@@ -95,9 +90,7 @@ class App {
     root.append(this.helpOverlay);
     this.safetyOverlay = this.buildSafetyNotice();
     root.append(this.safetyOverlay);
-    // `?gl=0` forces the canvas-2D path (handy for debugging / deterministic captures).
-    const useGl = new URLSearchParams(location.search).get('gl') !== '0';
-    this.renderer = new CanvasRenderer(canvas, useGl ? this.glCanvas : undefined);
+    this.renderer = new CanvasRenderer(canvas);
     this.client = new SimClient(colormapLut(this.colormapId));
     // Release the run guard only when a *run* tick returns — a paint/step/clear
     // frame interleaved ahead of an in-flight run must not let a second run out.
@@ -141,7 +134,6 @@ class App {
 
     const stage = el('main', { class: 'viv-stage' },
       this.canvas,
-      this.glCanvas,
       el('div', { class: 'viv-hint', text: 'drag to paint · scroll to zoom · alt-drag to pan · ? for shortcuts' }),
     );
 
