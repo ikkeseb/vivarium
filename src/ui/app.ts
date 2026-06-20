@@ -50,6 +50,7 @@ class App {
   private hovering = false;
   private urlTimer = 0;
 
+  private recreateRaf = 0;
   private acc = 0;
   private lastTime = 0;
   private frames = 0;
@@ -327,7 +328,7 @@ class App {
               const v = Number((e.target as HTMLInputElement).value);
               this.params[key] = v;
               readout.textContent = fmtNum(v, isInt, dec);
-              this.recreate();
+              this.scheduleRecreate();
             },
           },
         });
@@ -442,9 +443,28 @@ class App {
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   private recreate(): void {
+    if (this.recreateRaf) {
+      cancelAnimationFrame(this.recreateRaf);
+      this.recreateRaf = 0;
+    }
     this.sim = this.sys.create(this.params, this.seed, this.presetId);
     this.updateStatus();
     this.syncUrl();
+  }
+
+  /**
+   * Coalesce a rebuild to the next animation frame. Dragging a parameter slider
+   * fires `input` many times per frame; rebuilding (a full grid realloc + reseed)
+   * on each one is the dominant cost for the heavy field systems. The readout and
+   * `this.params` update synchronously for instant feedback, while the actual
+   * rebuild runs at most once per frame.
+   */
+  private scheduleRecreate(): void {
+    if (this.recreateRaf) return;
+    this.recreateRaf = requestAnimationFrame(() => {
+      this.recreateRaf = 0;
+      this.recreate();
+    });
   }
 
   /**
