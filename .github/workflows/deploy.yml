@@ -5,11 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Allow the deploy job to publish to GitHub Pages.
+# Least privilege at the top level; each job opts into more only where needed.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # One deploy at a time; newer pushes supersede in-flight runs.
 concurrency:
@@ -19,8 +17,14 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # No write scopes: this job runs dependency install and the build, so it
+    # must never see the Pages OIDC token.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -37,6 +41,11 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # The OIDC token + Pages write live only here, on a job that runs no
+    # project code beyond the trusted deploy-pages action.
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
