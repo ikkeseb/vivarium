@@ -1,6 +1,5 @@
 import type { RenderModel } from '../core/types';
 import { rgbaToCss } from '../core/types';
-import { ParticleGL } from './particle-gl';
 
 const VOID = '#06080c';
 const MIN_ZOOM = 1;
@@ -20,8 +19,6 @@ export class CanvasRenderer {
   private offCtx: CanvasRenderingContext2D;
   private img: ImageData | null = null;
   private buf32: Uint32Array | null = null;
-  /** Optional WebGL2 overlay for the additive-glow particle path; null = 2D fallback. */
-  private gl: ParticleGL | null = null;
 
   // Viewport transform from world space to device pixels (set every draw).
   private scale = 1;
@@ -35,7 +32,7 @@ export class CanvasRenderer {
   private worldW = 1;
   private worldH = 1;
 
-  constructor(private canvas: HTMLCanvasElement, glCanvas?: HTMLCanvasElement) {
+  constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('2D canvas context unavailable');
     this.ctx = ctx;
@@ -43,9 +40,6 @@ export class CanvasRenderer {
     const octx = this.off.getContext('2d', { alpha: false });
     if (!octx) throw new Error('2D canvas context unavailable');
     this.offCtx = octx;
-    // The glow overlay is optional: if WebGL2 is unavailable, this stays null and
-    // particles fall back to the 2D square renderer below.
-    if (glCanvas) this.gl = ParticleGL.tryCreate(glCanvas);
   }
 
   /** Match the backing store to the element's client size × devicePixelRatio. */
@@ -155,23 +149,9 @@ export class CanvasRenderer {
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     if (model.kind === 'particles') {
-      this.layout(model.width, model.height);
-      // The world background lives on the 2D layer; the glow (or the 2D square
-      // fallback) is painted on top of it so the dark navy field shows through
-      // wherever the overlay is transparent.
-      ctx.fillStyle = rgbaToCss(model.background);
-      ctx.fillRect(this.ox, this.oy, model.width * this.scale, model.height * this.scale);
-      if (this.gl) {
-        this.gl.draw(model, this.scale, this.ox, this.oy, this.canvas.width, this.canvas.height);
-      } else {
-        this.drawParticles(model);
-      }
+      this.drawParticles(model);
       return;
     }
-
-    // Non-particle systems render on the 2D layer only; wipe any stale glow so it
-    // doesn't bleed through after switching systems.
-    if (this.gl) this.gl.clear();
 
     const { width, height } = model;
     this.ensureImage(width, height);
@@ -233,11 +213,13 @@ export class CanvasRenderer {
     return modelToPNG(model);
   }
 
-  /** Canvas-2D fallback: solid squares grouped by species. Assumes `draw` has
-   *  already run `layout` and painted the world background. */
   private drawParticles(model: Extract<RenderModel, { kind: 'particles' }>): void {
     const ctx = this.ctx;
-    const { xs, ys, species, palette, count, radius } = model;
+    this.layout(model.width, model.height);
+    const { xs, ys, species, palette, count, radius, background } = model;
+
+    ctx.fillStyle = rgbaToCss(background);
+    ctx.fillRect(this.ox, this.oy, model.width * this.scale, model.height * this.scale);
 
     const r = Math.max(1, radius * this.scale);
     const d = r * 2;
