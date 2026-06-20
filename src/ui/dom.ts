@@ -34,11 +34,15 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   if (attrs.type && 'type' in node) (node as unknown as HTMLInputElement).type = attrs.type;
   if (attrs.placeholder && 'placeholder' in node)
     (node as unknown as HTMLInputElement).placeholder = attrs.placeholder;
-  if (attrs.value != null && 'value' in node)
-    (node as unknown as HTMLInputElement).value = String(attrs.value);
+  // min/max/step MUST be set before value: a range input clamps an assigned
+  // value to its *current* bounds, and the unset default is [0,100] with step 1,
+  // so setting value first would silently snap any out-of-default value (e.g. a
+  // 120-wide grid, or a 0.15 growth centre) to a wrong slider position.
   if (attrs.min != null) node.setAttribute('min', String(attrs.min));
   if (attrs.max != null) node.setAttribute('max', String(attrs.max));
   if (attrs.step != null) node.setAttribute('step', String(attrs.step));
+  if (attrs.value != null && 'value' in node)
+    (node as unknown as HTMLInputElement).value = String(attrs.value);
   if (attrs.checked != null && 'checked' in node)
     (node as unknown as HTMLInputElement).checked = attrs.checked;
   if (attrs.disabled != null && 'disabled' in node)
