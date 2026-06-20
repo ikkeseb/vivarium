@@ -5,6 +5,8 @@ cellular-automata and life systems, each a self-contained module with a seedable
 initial state and a deterministic step function. Pure TypeScript (strict) + Vite,
 no backend, no GPU, no runtime dependencies. Light runtime, heavy build.
 
+**[▶ Live demo](https://ikkeseb.github.io/vivarium/)**
+
 ![vivarium running Conway's Life](screens/_hero.png)
 
 ## Systems
@@ -78,7 +80,7 @@ Each system pins a **known outcome** (a glider returns to itself shifted by
 `(1,1)` after 4 steps; Rule 30 matches its verified triangle; Langton's ant draws
 a 2×2 block and returns home after 4 steps; Brian's Brain's isolated cell dies in
 2; Lenia's empty field stays empty; particles stay in bounds) plus **determinism
-snapshots** (seed + N steps → grid hash). 85 tests in total.
+snapshots** (seed + N steps → grid hash). 129 tests in total.
 
 ## Controls
 

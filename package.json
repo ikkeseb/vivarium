@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Client-side artificial-life sandbox: a gallery of deterministic cellular-automata and life systems.",
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
