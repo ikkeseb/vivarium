@@ -67,10 +67,6 @@ export class LifelikeSim implements Simulation {
     this.palette = new Uint32Array([DEAD, ALIVE]);
   }
 
-  setRule(rule: LifeRule): void {
-    this.rule = rule;
-  }
-
   /** Direct access to the current generation buffer (read/write). */
   get cells(): Uint8Array {
     return this.a;

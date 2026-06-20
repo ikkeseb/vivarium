@@ -24,18 +24,3 @@ export function randInt(rng: Rng, maxExclusive: number): number {
 export function randRange(rng: Rng, lo: number, hi: number): number {
   return lo + (hi - lo) * rng();
 }
-
-/** Standard-normal sample via Box–Muller (deterministic given the rng). */
-export function randNormal(rng: Rng): number {
-  let u = 0;
-  let v = 0;
-  while (u === 0) u = rng();
-  while (v === 0) v = rng();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-/** Pick a random element. Returns undefined only for empty input. */
-export function pick<T>(rng: Rng, arr: ReadonlyArray<T>): T | undefined {
-  if (arr.length === 0) return undefined;
-  return arr[randInt(rng, arr.length)];
-}
