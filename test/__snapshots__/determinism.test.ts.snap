@@ -15,3 +15,5 @@ exports[`determinism — every registered system > lenia: grid hash after 25 ste
 exports[`determinism — every registered system > life-rules: grid hash after 25 steps is pinned 1`] = `"b8fe97c1"`;
 
 exports[`determinism — every registered system > particle-life: grid hash after 25 steps is pinned 1`] = `"eca6e80c"`;
+
+exports[`determinism — every registered system > reaction-diffusion: grid hash after 25 steps is pinned 1`] = `"e5845a2a"`;
