@@ -197,6 +197,19 @@ export function defaultParams(specs: ReadonlyArray<ParamSpec>): Params {
   return out;
 }
 
+/**
+ * The parameter values for a system with a preset applied on top of its
+ * defaults — i.e. what the UI controls should show when that preset is active.
+ */
+export function paramsForPreset(sys: SystemDef, presetId?: string): Params {
+  const out = defaultParams(sys.params);
+  const preset = presetId ? sys.presets?.find((p) => p.id === presetId) : undefined;
+  if (preset?.params) {
+    for (const [k, v] of Object.entries(preset.params)) if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
 export function numParam(p: Params, key: string, fallback = 0): number {
   const v = p[key];
   return typeof v === 'number' ? v : fallback;

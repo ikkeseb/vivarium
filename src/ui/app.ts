@@ -2,7 +2,9 @@ import { el, clear } from './dom';
 import { CanvasRenderer } from '../render/renderer';
 import { systems, getSystem } from '../core/registry';
 import type { ParamSpec, ParamValue, Params, Simulation, SystemDef } from '../core/types';
-import { defaultParams } from '../core/types';
+import { paramsForPreset } from '../core/types';
+import { encodeUrlState, decodeUrlState, type UrlState } from './url-state';
+import { makeThumbnail } from './thumbnails';
 
 const MAX_STEPS_PER_FRAME = 240;
 
@@ -36,7 +38,15 @@ class App {
   private brushRadius = 1;
 
   private controls = new Map<string, Control>();
+  private thumbs = new Map<string, string>();
   private painting = false;
+  private panning = false;
+  private lastPanX = 0;
+  private lastPanY = 0;
+  private hoverX = 0;
+  private hoverY = 0;
+  private hovering = false;
+  private urlTimer = 0;
 
   private acc = 0;
   private lastTime = 0;
@@ -46,8 +56,12 @@ class App {
 
   constructor(root: HTMLElement) {
     this.sys = systems[0]!;
-    this.params = defaultParams(this.sys.params);
     this.presetId = this.sys.presets?.[0]?.id;
+    this.params = paramsForPreset(this.sys, this.presetId);
+
+    // Restore a shared deterministic permalink, if one is present in the URL.
+    const restored = decodeUrlState(location.hash, getSystem);
+    if (restored) this.adoptState(restored);
 
     const canvas = el('canvas', { class: 'viv-canvas' });
     this.canvas = canvas;
@@ -66,6 +80,8 @@ class App {
     this.buildPanel();
     this.attachCanvasEvents();
     this.attachKeyboard();
+    this.attachHashSync();
+    this.syncUrl(true); // canonicalise the URL on first load
 
     this.lastTime = performance.now();
     requestAnimationFrame((t) => this.loop(t));
@@ -96,7 +112,7 @@ class App {
 
     const stage = el('main', { class: 'viv-stage' },
       this.canvas,
-      el('div', { class: 'viv-hint', text: 'click + drag on the canvas to paint' }),
+      el('div', { class: 'viv-hint', text: 'drag to paint · scroll to zoom · alt-drag to pan · double-click to reset' }),
     );
 
     const panel = el('aside', { class: 'viv-panel' }, this.panelEl);
@@ -108,6 +124,11 @@ class App {
     clear(this.galleryEl);
     for (const s of systems) {
       const active = s.id === this.sys.id;
+      const thumb = el('img', { class: 'viv-gallery-thumb', dataset: { thumb: s.id } });
+      thumb.alt = '';
+      thumb.decoding = 'async';
+      const cached = this.thumbs.get(s.id);
+      if (cached) thumb.src = cached;
       const btn = el(
         'button',
         {
@@ -115,21 +136,44 @@ class App {
           dataset: { systemId: s.id },
           on: { click: () => this.selectSystem(s.id) },
         },
-        el('span', { class: 'viv-gallery-name', text: s.name }),
-        el('span', { class: 'viv-gallery-tag', text: s.tagline }),
+        thumb,
+        el('div', { class: 'viv-gallery-text' },
+          el('span', { class: 'viv-gallery-name', text: s.name }),
+          el('span', { class: 'viv-gallery-tag', text: s.tagline }),
+        ),
       );
       this.galleryEl.append(btn);
     }
+    this.scheduleThumbnails();
+  }
+
+  /** Compute any missing gallery thumbnails one per tick, off the first paint. */
+  private scheduleThumbnails(): void {
+    const pending = systems.filter((s) => !this.thumbs.has(s.id));
+    let i = 0;
+    const tick = (): void => {
+      if (i >= pending.length) return;
+      const s = pending[i++]!;
+      const url = makeThumbnail(s);
+      if (url) {
+        this.thumbs.set(s.id, url);
+        const img = this.galleryEl.querySelector<HTMLImageElement>(`img[data-thumb="${s.id}"]`);
+        if (img) img.src = url;
+      }
+      window.setTimeout(tick, 0);
+    };
+    window.setTimeout(tick, 0);
   }
 
   private selectSystem(id: string): void {
     const next = getSystem(id);
     if (!next || next.id === this.sys.id) return;
     this.sys = next;
-    this.params = defaultParams(next.params);
     this.presetId = next.presets?.[0]?.id;
+    this.params = paramsForPreset(next, this.presetId);
     this.brushValue = (next.brushStates ?? 2) > 1 ? 1 : 0;
     this.brushRadius = 1;
+    this.renderer.resetView();
     this.recreate();
     this.buildGallery();
     this.buildPanel();
@@ -170,6 +214,7 @@ class App {
         input: (e) => {
           this.sps = Number((e.target as HTMLInputElement).value);
           speedReadout.textContent = `${this.sps}/s`;
+          this.syncUrl();
         },
       },
     });
@@ -218,6 +263,19 @@ class App {
 
     // Brush
     this.panelEl.append(this.buildBrush());
+
+    // Share — a deterministic permalink reproduces this exact run anywhere.
+    const copyBtn = el('button', { class: 'viv-btn', text: 'Copy link' });
+    copyBtn.addEventListener('click', () => void this.copyLink(copyBtn));
+    const pngBtn = el('button', {
+      class: 'viv-btn', text: 'Export PNG',
+      on: { click: () => this.exportPng() },
+    });
+    const share = el('div', { class: 'viv-share' },
+      el('div', { class: 'viv-share-row' }, copyBtn, pngBtn),
+      el('p', { class: 'viv-share-note', text: 'link reproduces this exact run — same seed, params & speed' }),
+    );
+    this.panelEl.append(this.section('share', share));
   }
 
   private section(label: string, body: HTMLElement): HTMLElement {
@@ -238,15 +296,16 @@ class App {
       case 'float': {
         const isInt = spec.kind === 'int';
         const step = spec.step ?? (isInt ? 1 : 0.01);
+        const dec = isInt ? 0 : decimalsForStep(step);
         const cur = Number(this.params[key]);
-        const readout = el('span', { class: 'viv-readout', text: fmtNum(cur, isInt) });
+        const readout = el('span', { class: 'viv-readout', text: fmtNum(cur, isInt, dec) });
         const input = el('input', {
           type: 'range', min: spec.min, max: spec.max, step, value: cur,
           on: {
             input: (e) => {
               const v = Number((e.target as HTMLInputElement).value);
               this.params[key] = v;
-              readout.textContent = fmtNum(v, isInt);
+              readout.textContent = fmtNum(v, isInt, dec);
               this.recreate();
             },
           },
@@ -254,7 +313,7 @@ class App {
         this.controls.set(key, {
           set: (v) => {
             input.value = String(v);
-            readout.textContent = fmtNum(Number(v), isInt);
+            readout.textContent = fmtNum(Number(v), isInt, dec);
           },
         });
         return this.field(spec.label, input, readout);
@@ -364,6 +423,81 @@ class App {
   private recreate(): void {
     this.sim = this.sys.create(this.params, this.seed, this.presetId);
     this.updateStatus();
+    this.syncUrl();
+  }
+
+  // ── Shareable permalinks ───────────────────────────────────────────────────
+
+  /** Apply a decoded URL state onto the live config (no rebuild side effects). */
+  private adoptState(s: UrlState): void {
+    const sys = getSystem(s.sys);
+    if (!sys) return;
+    this.sys = sys;
+    this.params = { ...paramsForPreset(sys, s.preset), ...s.params };
+    this.seed = s.seed;
+    this.sps = s.sps;
+    this.presetId = s.preset ?? sys.presets?.[0]?.id;
+    this.brushValue = (sys.brushStates ?? 2) > 1 ? 1 : 0;
+    this.brushRadius = 1;
+  }
+
+  /** Mirror the current configuration into the URL hash (debounced). */
+  private syncUrl(immediate = false): void {
+    const write = (): void => {
+      const hash = encodeUrlState({
+        sys: this.sys.id,
+        seed: this.seed,
+        sps: this.sps,
+        preset: this.presetId,
+        params: this.params,
+      });
+      history.replaceState(null, '', '#' + hash);
+    };
+    if (this.urlTimer) clearTimeout(this.urlTimer);
+    if (immediate) write();
+    else this.urlTimer = window.setTimeout(write, 150);
+  }
+
+  /** React to externally-changed hashes (pasted links, back/forward). */
+  private attachHashSync(): void {
+    window.addEventListener('hashchange', () => {
+      const s = decodeUrlState(location.hash, getSystem);
+      if (!s) return;
+      const sameConfig =
+        s.sys === this.sys.id &&
+        s.seed === this.seed &&
+        s.preset === this.presetId &&
+        encodeUrlState(s) === encodeUrlState(this.snapshot());
+      if (sameConfig) return; // our own replaceState, nothing to do
+      this.adoptState(s);
+      this.renderer.resetView();
+      this.recreate();
+      this.buildGallery();
+      this.buildPanel();
+    });
+  }
+
+  private snapshot(): UrlState {
+    return {
+      sys: this.sys.id,
+      seed: this.seed,
+      sps: this.sps,
+      preset: this.presetId,
+      params: this.params,
+    };
+  }
+
+  private async copyLink(btn: HTMLButtonElement): Promise<void> {
+    this.syncUrl(true);
+    const url = location.href;
+    const label = btn.textContent ?? 'Copy link';
+    try {
+      await navigator.clipboard.writeText(url);
+      btn.textContent = 'Copied ✓';
+    } catch {
+      btn.textContent = 'Press ⌘C';
+    }
+    window.setTimeout(() => { btn.textContent = label; }, 1400);
   }
 
   private applyPreset(id: string): void {
@@ -415,25 +549,72 @@ class App {
   // ── Canvas interaction ───────────────────────────────────────────────────────
 
   private attachCanvasEvents(): void {
+    const c = this.canvas;
     const paintAt = (e: PointerEvent): void => {
       if (!this.sim.paint) return;
       const { x, y } = this.renderer.screenToWorld(e.clientX, e.clientY);
       this.sim.paint({ x, y, value: this.brushValue, radius: this.brushRadius });
     };
-    this.canvas.addEventListener('pointerdown', (e) => {
-      this.painting = true;
-      this.canvas.setPointerCapture(e.pointerId);
-      paintAt(e);
+
+    // Wheel = zoom toward the cursor.
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      this.renderer.zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+    }, { passive: false });
+
+    // Alt-drag or middle-button drag = pan; plain drag = paint.
+    c.addEventListener('pointerdown', (e) => {
+      c.setPointerCapture(e.pointerId);
+      if (e.button === 1 || e.altKey) {
+        this.panning = true;
+        this.lastPanX = e.clientX;
+        this.lastPanY = e.clientY;
+        e.preventDefault();
+      } else {
+        this.painting = true;
+        paintAt(e);
+      }
     });
-    this.canvas.addEventListener('pointermove', (e) => {
-      if (this.painting) paintAt(e);
+    c.addEventListener('pointermove', (e) => {
+      const w = this.renderer.screenToWorld(e.clientX, e.clientY);
+      this.hoverX = w.x;
+      this.hoverY = w.y;
+      this.hovering = true;
+      if (this.panning) {
+        this.renderer.panBy(e.clientX - this.lastPanX, e.clientY - this.lastPanY);
+        this.lastPanX = e.clientX;
+        this.lastPanY = e.clientY;
+      } else if (this.painting) {
+        paintAt(e);
+      }
     });
     const stop = (e: PointerEvent): void => {
       this.painting = false;
-      if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+      this.panning = false;
+      if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
     };
-    this.canvas.addEventListener('pointerup', stop);
-    this.canvas.addEventListener('pointercancel', stop);
+    c.addEventListener('pointerup', stop);
+    c.addEventListener('pointercancel', stop);
+    c.addEventListener('pointerleave', () => { this.hovering = false; });
+    c.addEventListener('dblclick', () => this.renderer.resetView());
+  }
+
+  private brushCss(): string {
+    return this.sys.brushColors?.[this.brushValue] ?? (this.brushValue === 0 ? '#8893a5' : '#5ef2c4');
+  }
+
+  private zoomCenter(factor: number): void {
+    const rect = this.canvas.getBoundingClientRect();
+    this.renderer.zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
+  }
+
+  private exportPng(): void {
+    const url = this.renderer.exportPNG(this.sim.render());
+    if (!url) return;
+    const a = el('a', {}) as HTMLAnchorElement;
+    a.href = url;
+    a.download = `vivarium_${this.sys.id}_seed${this.seed}_gen${this.sim.generation}_${this.sim.hash()}.png`;
+    a.click();
   }
 
   private attachKeyboard(): void {
@@ -445,6 +626,10 @@ class App {
         case 'r': this.reset(); break;
         case 'n': this.randomize(); break;
         case 'c': this.clearSim(); break;
+        case 'f': this.renderer.resetView(); break;
+        case 'e': this.exportPng(); break;
+        case '+': case '=': this.zoomCenter(1.2); break;
+        case '-': case '_': this.zoomCenter(1 / 1.2); break;
       }
     });
   }
@@ -466,6 +651,9 @@ class App {
     }
 
     this.renderer.draw(this.sim.render());
+    if (this.hovering && this.sim.paint) {
+      this.renderer.drawCursor(this.hoverX, this.hoverY, this.brushRadius, this.brushCss());
+    }
 
     this.frames++;
     if (now - this.fpsClock >= 500) {
@@ -490,6 +678,14 @@ class App {
   }
 }
 
-function fmtNum(v: number, isInt: boolean): string {
-  return isInt ? String(Math.round(v)) : v.toFixed(2);
+function fmtNum(v: number, isInt: boolean, decimals = 2): string {
+  return isInt ? String(Math.round(v)) : v.toFixed(decimals);
+}
+
+/** Decimal places implied by a slider step (0.001 → 3), so readouts aren't lossy. */
+function decimalsForStep(step: number): number {
+  if (!Number.isFinite(step) || step <= 0) return 2;
+  const s = String(step);
+  const dot = s.indexOf('.');
+  return dot < 0 ? 0 : Math.min(4, s.length - dot - 1);
 }
