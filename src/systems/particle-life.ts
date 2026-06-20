@@ -169,6 +169,7 @@ export class ParticleLifeSim implements Simulation {
   private readonly cellStart: Int32Array; // length cols*rows+1, CSR-style offsets
   private readonly cellCount: Int32Array; // scratch counters, length cols*rows
   private readonly order: Int32Array; // particle indices sorted by cell
+  private readonly cellOf: Int32Array; // cached cell index per particle, per step
   // Scratch for de-duplicating the 3×3 neighbour cells when the grid is tiny
   // (cols/rows < 3): toroidal wrap would otherwise visit a cell twice and
   // double-count its particles' forces. At most 9 distinct cells per particle.
@@ -220,6 +221,7 @@ export class ParticleLifeSim implements Simulation {
     this.cellStart = new Int32Array(cells + 1);
     this.cellCount = new Int32Array(cells);
     this.order = new Int32Array(count);
+    this.cellOf = new Int32Array(count);
   }
 
   /** Lay out particles with random positions, zero velocity, random species. */
@@ -256,9 +258,14 @@ export class ParticleLifeSim implements Simulation {
   /** Rebuild the CSR bins (cellStart offsets + order array) for this frame. */
   private rebuildGrid(): void {
     const cells = this.cols * this.rows;
+    const cellOf = this.cellOf;
     this.cellCount.fill(0);
     for (let i = 0; i < this.count; i++) {
-      this.cellCount[this.cellIndex(this.xs[i]!, this.ys[i]!)]!++;
+      // Positions don't change between the two passes, so cache cellIndex once
+      // here and reuse it in the scatter pass instead of recomputing it.
+      const c = this.cellIndex(this.xs[i]!, this.ys[i]!);
+      cellOf[i] = c;
+      this.cellCount[c]!++;
     }
     // Prefix-sum the counts into start offsets.
     let acc = 0;
@@ -270,7 +277,7 @@ export class ParticleLifeSim implements Simulation {
     // Scatter particle indices into `order`, using cellCount as a cursor.
     this.cellCount.fill(0);
     for (let i = 0; i < this.count; i++) {
-      const c = this.cellIndex(this.xs[i]!, this.ys[i]!);
+      const c = cellOf[i]!;
       this.order[this.cellStart[c]! + this.cellCount[c]!] = i;
       this.cellCount[c]!++;
     }
@@ -299,6 +306,10 @@ export class ParticleLifeSim implements Simulation {
       k,
     } = this;
     const invRmax = 1 / rmax;
+    // Cells in the 3×3 block can only repeat (via toroidal wrap) when the grid
+    // is smaller than 3 in a dimension. On any normal grid they're distinct, so
+    // the per-cell dedup scan is pure overhead — gate it on the tiny-grid case.
+    const dedup = cols < 3 || rows < 3;
 
     for (let i = 0; i < this.count; i++) {
       const xi = xs[i]!;
@@ -311,8 +322,8 @@ export class ParticleLifeSim implements Simulation {
       const cy = Math.min(rows - 1, Math.max(0, Math.floor(yi / this.cellSize)));
 
       // Scan the 3×3 block of cells around particle i, wrapping toroidally.
-      // De-duplicate cells so a tiny grid (cols/rows < 3) never counts a
-      // neighbour cell more than once.
+      // On a tiny grid (cols/rows < 3) the same cell can appear twice, so
+      // de-duplicate to avoid double-counting its particles' forces.
       const seen = this.seenCells;
       let seenN = 0;
       for (let oy = -1; oy <= 1; oy++) {
@@ -324,15 +335,17 @@ export class ParticleLifeSim implements Simulation {
           if (nx < 0) nx += cols;
           else if (nx >= cols) nx -= cols;
           const cell = ny * cols + nx;
-          let dup = false;
-          for (let s = 0; s < seenN; s++) {
-            if (seen[s] === cell) {
-              dup = true;
-              break;
+          if (dedup) {
+            let dup = false;
+            for (let s = 0; s < seenN; s++) {
+              if (seen[s] === cell) {
+                dup = true;
+                break;
+              }
             }
+            if (dup) continue;
+            seen[seenN++] = cell;
           }
-          if (dup) continue;
-          seen[seenN++] = cell;
           const begin = cellStart[cell]!;
           const end = cellStart[cell + 1]!;
           for (let p = begin; p < end; p++) {
