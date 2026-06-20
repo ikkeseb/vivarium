@@ -21,9 +21,9 @@ const PALETTE = new Uint32Array([rgba(8, 11, 17), rgba(94, 242, 196)]);
  * `rule`. Off-grid neighbours wrap toroidally when `wrap` is true, otherwise
  * they are treated as 0. Exported for direct unit testing.
  */
-export function elementaryRow(prev: Uint8Array, rule: number, wrap: boolean): Uint8Array {
+/** Compute the next row from `prev` into the caller-supplied `next` buffer. */
+function writeRow(prev: Uint8Array, next: Uint8Array, rule: number, wrap: boolean): void {
   const w = prev.length;
-  const next = new Uint8Array(w);
   for (let i = 0; i < w; i++) {
     let left: number;
     let right: number;
@@ -38,6 +38,11 @@ export function elementaryRow(prev: Uint8Array, rule: number, wrap: boolean): Ui
     const idx = (left << 2) | (center << 1) | right;
     next[i] = (rule >> idx) & 1;
   }
+}
+
+export function elementaryRow(prev: Uint8Array, rule: number, wrap: boolean): Uint8Array {
+  const next = new Uint8Array(prev.length);
+  writeRow(prev, next, rule, wrap);
   return next;
 }
 
@@ -52,6 +57,9 @@ class ElementarySim {
   private readonly data: Uint8Array;
   // The live current row that step() advances.
   private cur: Uint8Array;
+  // Persistent back buffer for the next row, swapped with `cur` each step so no
+  // typed array is allocated per tick.
+  private scratch: Uint8Array;
 
   constructor(width: number, height: number, rule: number, wrap: boolean) {
     this.width = width;
@@ -60,6 +68,7 @@ class ElementarySim {
     this.wrap = wrap;
     this.data = new Uint8Array(width * height);
     this.cur = new Uint8Array(width);
+    this.scratch = new Uint8Array(width);
   }
 
   /** Build the initial current row from the chosen seeding strategy. */
@@ -87,11 +96,14 @@ class ElementarySim {
 
   step(): void {
     const w = this.width;
-    const next = elementaryRow(this.cur, this.rule, this.wrap);
+    // Compute the next row into the back buffer, then swap — no per-tick alloc.
+    writeRow(this.cur, this.scratch, this.rule, this.wrap);
+    const next = this.scratch;
+    this.scratch = this.cur;
+    this.cur = next;
     // Scroll the display up by one row, then write the new row at the bottom.
     this.data.copyWithin(0, w);
     this.data.set(next, (this.height - 1) * w);
-    this.cur = next;
     this.generation++;
   }
 
