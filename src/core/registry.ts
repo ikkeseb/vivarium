@@ -4,6 +4,7 @@ import { lifeRulesSystem } from '../systems/life-rules';
 import { generationsSystem } from '../systems/generations';
 import { cyclicSystem } from '../systems/cyclic';
 import { elementarySystem } from '../systems/elementary';
+import { langtonSystem } from '../systems/langton';
 
 // The gallery. Systems are registered here in display order.
 export const systems: ReadonlyArray<SystemDef> = [
@@ -12,6 +13,7 @@ export const systems: ReadonlyArray<SystemDef> = [
   generationsSystem,
   cyclicSystem,
   elementarySystem,
+  langtonSystem,
 ];
 
 export function getSystem(id: string): SystemDef | undefined {
