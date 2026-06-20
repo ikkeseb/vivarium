@@ -122,6 +122,15 @@ html, body {
     radial-gradient(120% 120% at 50% 0%, #0a0e15 0%, var(--bg) 70%);
   overflow: hidden;
 }
+/* Subtle vignette to give the simulation depth and draw the eye to centre.
+   pointer-events:none keeps painting/panning unaffected. */
+.viv-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 140px 24px rgba(0, 0, 0, 0.38);
+}
 .viv-canvas { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 .viv-hint {
   position: absolute;
