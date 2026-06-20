@@ -14,6 +14,13 @@ Light runtime, heavy build.
 
 After changing a system, run `pnpm typecheck && pnpm test && pnpm build` and keep all three green.
 
+## Deploy
+
+Public repo (MIT), fully static (`base: './'` — serves from any host/subpath).
+Production: **Cloudflare Pages** → https://vivarium.nuez.no (builds `pnpm build` →
+`dist/` on push to `main`). CF runs neither typecheck nor tests, so
+`.github/workflows/ci.yml` is kept as a CI gate (typecheck + test + build).
+
 ## Architecture
 
 Everything implements two interfaces in `src/core/types.ts`:
