@@ -1,4 +1,4 @@
-import type { RenderModel } from '../core/types';
+import type { CellsModel, FieldModel, ParticlesModel, RenderModel } from '../core/types';
 import { rgbaToCss } from '../core/types';
 
 const VOID = '#06080c';
@@ -155,22 +155,7 @@ export class CanvasRenderer {
 
     const { width, height } = model;
     this.ensureImage(width, height);
-    const buf = this.buf32!;
-    if (model.kind === 'cells') {
-      const { data, palette } = model;
-      const pn = palette.length;
-      for (let i = 0; i < data.length; i++) {
-        const s = data[i]!;
-        buf[i] = palette[s < pn ? s : 0]!;
-      }
-    } else {
-      const { data, colormap } = model;
-      for (let i = 0; i < data.length; i++) {
-        let v = data[i]!;
-        v = v < 0 ? 0 : v > 1 ? 1 : v;
-        buf[i] = colormap[(v * 255) | 0]!;
-      }
-    }
+    fillIndexedBuffer(model, this.buf32!);
     this.offCtx.putImageData(this.img!, 0, 0);
 
     this.layout(width, height);
@@ -213,25 +198,65 @@ export class CanvasRenderer {
     return modelToPNG(model);
   }
 
-  private drawParticles(model: Extract<RenderModel, { kind: 'particles' }>): void {
-    const ctx = this.ctx;
+  private drawParticles(model: ParticlesModel): void {
     this.layout(model.width, model.height);
-    const { xs, ys, species, palette, count, radius, background } = model;
+    paintParticles(this.ctx, model, this.ox, this.oy, this.scale);
+  }
+}
 
-    ctx.fillStyle = rgbaToCss(background);
-    ctx.fillRect(this.ox, this.oy, model.width * this.scale, model.height * this.scale);
+/**
+ * Draw a particle model as species-grouped filled squares into `ctx`, mapping
+ * world coordinates through (ox, oy, scale). Shared by the live renderer
+ * (ox/oy/scale = the current viewport transform) and the PNG export
+ * (ox=oy=0, scale = the integer upscale). fillStyle is set once per species to
+ * minimise canvas state changes; no allocation, so it is safe on the per-frame
+ * path.
+ */
+function paintParticles(
+  ctx: CanvasRenderingContext2D,
+  model: ParticlesModel,
+  ox: number,
+  oy: number,
+  scale: number,
+): void {
+  const { xs, ys, species, palette, count, radius, background } = model;
 
-    const r = Math.max(1, radius * this.scale);
-    const d = r * 2;
-    const ns = palette.length;
-    for (let sp = 0; sp < ns; sp++) {
-      ctx.fillStyle = rgbaToCss(palette[sp]!);
-      for (let i = 0; i < count; i++) {
-        if (species[i] !== sp) continue;
-        const sx = this.ox + xs[i]! * this.scale;
-        const sy = this.oy + ys[i]! * this.scale;
-        ctx.fillRect(sx - r, sy - r, d, d);
-      }
+  ctx.fillStyle = rgbaToCss(background);
+  ctx.fillRect(ox, oy, model.width * scale, model.height * scale);
+
+  const r = Math.max(1, radius * scale);
+  const d = r * 2;
+  const ns = palette.length;
+  for (let sp = 0; sp < ns; sp++) {
+    ctx.fillStyle = rgbaToCss(palette[sp]!);
+    for (let i = 0; i < count; i++) {
+      if (species[i] !== sp) continue;
+      ctx.fillRect(ox + xs[i]! * scale - r, oy + ys[i]! * scale - r, d, d);
+    }
+  }
+}
+
+/**
+ * Fill a preallocated RGBA buffer from a cells/field model: cells map state →
+ * palette (out-of-range states fall back to palette[0]); field clamps the value
+ * to [0,1] and indexes the colormap LUT. Shared by the live renderer and the
+ * PNG export so the index→colour mapping lives in exactly one place. Takes the
+ * caller's buffer and allocates nothing, so it is safe on the per-frame path.
+ */
+function fillIndexedBuffer(model: CellsModel | FieldModel, buf: Uint32Array): void {
+  if (model.kind === 'cells') {
+    const { data, palette } = model;
+    const pn = palette.length;
+    for (let i = 0; i < data.length; i++) {
+      const s = data[i]!;
+      buf[i] = palette[s < pn ? s : 0]!;
+    }
+  } else {
+    const { data, colormap } = model;
+    for (let i = 0; i < data.length; i++) {
+      let v = data[i]!;
+      v = v < 0 ? 0 : v > 1 ? 1 : v;
+      buf[i] = colormap[(v * 255) | 0]!;
     }
   }
 }
@@ -252,18 +277,7 @@ export function modelToPNG(model: RenderModel, targetPx = 1024): string {
   cx.imageSmoothingEnabled = false;
 
   if (model.kind === 'particles') {
-    cx.fillStyle = rgbaToCss(model.background);
-    cx.fillRect(0, 0, c.width, c.height);
-    const r = Math.max(1, model.radius * k);
-    const d = r * 2;
-    const ns = model.palette.length;
-    for (let sp = 0; sp < ns; sp++) {
-      cx.fillStyle = rgbaToCss(model.palette[sp]!);
-      for (let i = 0; i < model.count; i++) {
-        if (model.species[i] !== sp) continue;
-        cx.fillRect(model.xs[i]! * k - r, model.ys[i]! * k - r, d, d);
-      }
-    }
+    paintParticles(cx, model, 0, 0, k);
     return c.toDataURL('image/png');
   }
 
@@ -274,24 +288,10 @@ export function modelToPNG(model: RenderModel, targetPx = 1024): string {
   if (!tctx) return '';
   const img = tctx.createImageData(model.width, model.height);
   const buf = new Uint32Array(img.data.buffer);
-  if (model.kind === 'cells') {
-    const { data, palette } = model;
-    const pn = palette.length;
-    for (let i = 0; i < data.length; i++) {
-      const s = data[i]!;
-      buf[i] = palette[s < pn ? s : 0]!;
-    }
-  } else {
-    const { data, colormap } = model;
-    for (let i = 0; i < data.length; i++) {
-      let v = data[i]!;
-      v = v < 0 ? 0 : v > 1 ? 1 : v;
-      buf[i] = colormap[(v * 255) | 0]!;
-    }
-    }
-    tctx.putImageData(img, 0, 0);
-    cx.drawImage(tmp, 0, 0, model.width, model.height, 0, 0, c.width, c.height);
-    return c.toDataURL('image/png');
+  fillIndexedBuffer(model, buf);
+  tctx.putImageData(img, 0, 0);
+  cx.drawImage(tmp, 0, 0, model.width, model.height, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png');
 }
 
 function clampn(n: number, lo: number, hi: number): number {
