@@ -85,6 +85,15 @@ describe('url-state', () => {
     const back = decodeUrlState(`sys=${sys.id}&seed=1&sps=15&cm=not-a-map`, getSystem)!;
     expect(back.cm).toBeUndefined();
   });
+
+  it('clamps sps to the slider ceiling so a permalink survives the first slider touch', () => {
+    const sys = systems[0]!;
+    // The speed slider tops out at SPS_MAX (200); the codec must not admit a
+    // higher speed it can't represent, or the first nudge would rewrite it down.
+    expect(decodeUrlState(`sys=${sys.id}&seed=1&sps=600`, getSystem)!.sps).toBe(200);
+    expect(decodeUrlState(`sys=${sys.id}&seed=1&sps=200`, getSystem)!.sps).toBe(200);
+    expect(decodeUrlState(`sys=${sys.id}&seed=1&sps=0`, getSystem)!.sps).toBe(1);
+  });
 });
 
 function defaultsOf(id: string): Record<string, number | string | boolean> {

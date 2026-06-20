@@ -29,6 +29,13 @@ export interface UrlState {
 
 const PARAM_PREFIX = 'p.';
 
+// Steps-per-second bounds — the single source of truth shared with the speed
+// slider in app.ts. The codec clamps to the same ceiling the control can reach,
+// so a hand-edited or stale permalink is always representable (and survives the
+// first slider touch instead of being silently rewritten down to it).
+export const SPS_MIN = 1;
+export const SPS_MAX = 200;
+
 export function encodeUrlState(state: UrlState): string {
   const q = new URLSearchParams();
   q.set('sys', state.sys);
@@ -57,7 +64,7 @@ export function decodeUrlState(
   if (!sys) return null;
 
   const seed = toInt(q.get('seed'), 1);
-  const sps = clamp(toInt(q.get('sps'), 15), 1, 1000);
+  const sps = clamp(toInt(q.get('sps'), 15), SPS_MIN, SPS_MAX);
 
   const presetRaw = q.get('preset') ?? undefined;
   const preset =

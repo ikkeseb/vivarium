@@ -3,7 +3,7 @@ import { CanvasRenderer } from '../render/renderer';
 import { systems, getSystem } from '../core/registry';
 import type { ParamSpec, ParamValue, Params, RenderModel, Simulation, SystemDef } from '../core/types';
 import { paramsForPreset } from '../core/types';
-import { encodeUrlState, decodeUrlState, type UrlState } from './url-state';
+import { encodeUrlState, decodeUrlState, SPS_MIN, SPS_MAX, type UrlState } from './url-state';
 import { makeThumbnail } from './thumbnails';
 import { COLORMAPS, DEFAULT_COLORMAP_ID, colormapLut, isColormapId } from '../render/colormaps';
 
@@ -27,6 +27,8 @@ class App {
   private fpsEl: HTMLElement;
   private playBtn: HTMLButtonElement;
   private helpOverlay!: HTMLElement;
+  private helpCloseBtn!: HTMLButtonElement;
+  private lastFocus: HTMLElement | null = null;
 
   private sys: SystemDef;
   private params: Params;
@@ -149,24 +151,44 @@ class App {
         el('kbd', { class: 'viv-kbd', text: k }),
         el('span', { class: 'viv-help-desc', text: d })));
     }
+    const title = el('h2', { class: 'viv-help-title', id: 'viv-help-title', text: 'Shortcuts' });
+    this.helpCloseBtn = el('button', {
+      class: 'viv-btn viv-btn-icon', text: '✕', title: 'Close',
+      on: { click: () => this.toggleHelp(false) },
+    });
     const card = el('div', { class: 'viv-help-card' },
-      el('div', { class: 'viv-help-head' },
-        el('h2', { class: 'viv-help-title', text: 'Shortcuts' }),
-        el('button', {
-          class: 'viv-btn viv-btn-icon', text: '✕', title: 'Close',
-          on: { click: () => this.toggleHelp(false) },
-        })),
+      el('div', { class: 'viv-help-head' }, title, this.helpCloseBtn),
       list);
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+    card.setAttribute('aria-labelledby', 'viv-help-title');
     const overlay = el('div', {
       class: 'viv-help-overlay',
-      on: { click: (e) => { if (e.target === overlay) this.toggleHelp(false); } },
+      on: {
+        click: (e) => { if (e.target === overlay) this.toggleHelp(false); },
+        // Trap Tab inside the card (only the close button is focusable).
+        keydown: (e) => {
+          if ((e as KeyboardEvent).key === 'Tab') {
+            e.preventDefault();
+            this.helpCloseBtn.focus();
+          }
+        },
+      },
     }, card);
     return overlay;
   }
 
   private toggleHelp(force?: boolean): void {
     const open = force ?? !this.helpOverlay.classList.contains('is-open');
+    if (open === this.helpOverlay.classList.contains('is-open')) return;
     this.helpOverlay.classList.toggle('is-open', open);
+    if (open) {
+      this.lastFocus = document.activeElement as HTMLElement | null;
+      this.helpCloseBtn.focus();
+    } else {
+      this.lastFocus?.focus?.();
+      this.lastFocus = null;
+    }
   }
 
   private buildGallery(): void {
@@ -497,10 +519,7 @@ class App {
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   private recreate(): void {
-    if (this.recreateRaf) {
-      cancelAnimationFrame(this.recreateRaf);
-      this.recreateRaf = 0;
-    }
+    this.cancelPendingRecreate();
     this.sim = this.sys.create(this.params, this.seed, this.presetId);
     this.updateStatus();
     this.syncUrl();
@@ -519,6 +538,19 @@ class App {
       this.recreateRaf = 0;
       this.recreate();
     });
+  }
+
+  /**
+   * Drop a queued rebuild. Direct mutations of the live sim — a Clear, or a
+   * brush stroke — must call this first, otherwise a rebuild scheduled by a
+   * just-dragged slider would fire on the next frame and silently wipe the
+   * user's edit (rebuilding a fresh seeded grid from params).
+   */
+  private cancelPendingRecreate(): void {
+    if (this.recreateRaf) {
+      cancelAnimationFrame(this.recreateRaf);
+      this.recreateRaf = 0;
+    }
   }
 
   /**
@@ -631,6 +663,7 @@ class App {
   }
 
   private clearSim(): void {
+    this.cancelPendingRecreate();
     if (this.sim.clear) {
       this.sim.clear();
       this.updateStatus();
@@ -655,6 +688,7 @@ class App {
     const c = this.canvas;
     const paintAt = (e: PointerEvent): void => {
       if (!this.sim.paint) return;
+      this.cancelPendingRecreate(); // a brush stroke must survive a just-dragged slider's queued rebuild
       const { x, y } = this.renderer.screenToWorld(e.clientX, e.clientY);
       this.sim.paint({ x, y, value: this.brushValue, radius: this.brushRadius });
     };
@@ -723,6 +757,11 @@ class App {
   private attachKeyboard(): void {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      // While the help modal is up, only let it be dismissed — don't let the
+      // shortcuts it documents mutate the sim hidden behind the backdrop.
+      if (this.helpOverlay.classList.contains('is-open') && e.key !== 'Escape' && e.key !== '?') {
+        return;
+      }
       switch (e.key) {
         case ' ': e.preventDefault(); this.togglePlay(); break;
         case 's': this.stepOnce(); break;
@@ -789,10 +828,10 @@ function fmtNum(v: number, isInt: boolean, decimals = 2): string {
 
 // Speed slider runs on a logarithmic scale so the low end (1–20/s, where the
 // dynamics are actually watchable) gets the bulk of the travel instead of being
-// crammed into the first few pixels of a linear 1–200 track. `sps` itself stays
-// linear everywhere else (URL, run loop); only the slider position is warped.
-const SPS_MIN = 1;
-const SPS_MAX = 200;
+// crammed into the first few pixels of a linear track. `sps` itself stays linear
+// everywhere else (URL, run loop); only the slider position is warped. SPS_MIN /
+// SPS_MAX are shared with the URL codec so the control and the permalink agree
+// on the ceiling.
 const SPS_TICKS = 1000;
 
 function spsToPos(sps: number): number {
