@@ -2,6 +2,7 @@ import type { Params, PaintInfo, RenderModel, Simulation, SystemDef } from '../c
 import { boolParam, numParam, rgba, strParam } from '../core/types';
 import { hashParts } from '../core/hash';
 import { mulberry32 } from '../core/prng';
+import { wrapState } from '../core/wrap';
 
 // Cyclic Cellular Automaton (David Griffeath).
 //
@@ -205,7 +206,7 @@ export class CyclicSim implements Simulation {
     const cy = Math.round(info.y);
     const r = Math.max(0, Math.round(info.radius));
     // Cycle the painted value into a valid state; negatives folded up.
-    const v = ((Math.round(info.value) % this.states) + this.states) % this.states;
+    const v = wrapState(Math.round(info.value), this.states);
     const W = this.width;
     const H = this.height;
     for (let dy = -r; dy <= r; dy++) {

@@ -1,6 +1,7 @@
 import type { PaintInfo, Params, RenderModel, Simulation, SystemDef } from '../core/types';
 import { boolParam, numParam, rgba, rgbaToCss } from '../core/types';
 import { hashParts } from '../core/hash';
+import { wrapState } from '../core/wrap';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Wireworld — Brian Silverman's electron-on-a-circuit cellular automaton.
@@ -63,9 +64,7 @@ export class WireworldSim implements Simulation {
 
   set(x: number, y: number, v: number): void {
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-    let s = v % STATES;
-    if (s < 0) s += STATES;
-    this.a[y * this.width + x] = s;
+    this.a[y * this.width + x] = wrapState(v, STATES);
   }
 
   clear(): void {
