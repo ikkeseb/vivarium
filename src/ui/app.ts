@@ -1,10 +1,11 @@
 import { el, clear } from './dom';
 import { CanvasRenderer } from '../render/renderer';
 import { systems, getSystem } from '../core/registry';
-import type { ParamSpec, ParamValue, Params, Simulation, SystemDef } from '../core/types';
+import type { ParamSpec, ParamValue, Params, RenderModel, Simulation, SystemDef } from '../core/types';
 import { paramsForPreset } from '../core/types';
 import { encodeUrlState, decodeUrlState, type UrlState } from './url-state';
 import { makeThumbnail } from './thumbnails';
+import { COLORMAPS, DEFAULT_COLORMAP_ID, colormapLut, isColormapId } from '../render/colormaps';
 
 const MAX_STEPS_PER_FRAME = 240;
 
@@ -36,6 +37,7 @@ class App {
   private sps = 15;
   private brushValue = 1;
   private brushRadius = 1;
+  private colormapId = DEFAULT_COLORMAP_ID;
 
   private controls = new Map<string, Control>();
   private thumbs = new Map<string, string>();
@@ -261,6 +263,25 @@ class App {
       this.panelEl.append(this.section('parameters', paramBox));
     }
 
+    // Colormap — cosmetic, field systems only; applied live with no rebuild.
+    if (this.sim.render().kind === 'field') {
+      const select = el('select', {
+        class: 'viv-select',
+        on: {
+          change: (e) => {
+            this.colormapId = (e.target as HTMLSelectElement).value;
+            this.syncUrl();
+          },
+        },
+      });
+      for (const c of COLORMAPS) {
+        const opt = el('option', { value: c.id, text: c.label });
+        if (c.id === this.colormapId) opt.selected = true;
+        select.append(opt);
+      }
+      this.panelEl.append(this.section('render', this.field('Colormap', select)));
+    }
+
     // Brush
     this.panelEl.append(this.buildBrush());
 
@@ -426,6 +447,18 @@ class App {
     this.syncUrl();
   }
 
+  /**
+   * The current render model with the chosen colormap applied. Swapping the LUT
+   * on a field model is purely cosmetic — it never touches simulation state, so
+   * `hash()` and determinism are unaffected (the model object is persistent, so
+   * this is a single pointer write per frame, not an allocation).
+   */
+  private renderModel(): RenderModel {
+    const model = this.sim.render();
+    if (model.kind === 'field') model.colormap = colormapLut(this.colormapId);
+    return model;
+  }
+
   // ── Shareable permalinks ───────────────────────────────────────────────────
 
   /** Apply a decoded URL state onto the live config (no rebuild side effects). */
@@ -439,18 +472,13 @@ class App {
     this.presetId = s.preset ?? sys.presets?.[0]?.id;
     this.brushValue = (sys.brushStates ?? 2) > 1 ? 1 : 0;
     this.brushRadius = 1;
+    this.colormapId = s.cm && isColormapId(s.cm) ? s.cm : DEFAULT_COLORMAP_ID;
   }
 
   /** Mirror the current configuration into the URL hash (debounced). */
   private syncUrl(immediate = false): void {
     const write = (): void => {
-      const hash = encodeUrlState({
-        sys: this.sys.id,
-        seed: this.seed,
-        sps: this.sps,
-        preset: this.presetId,
-        params: this.params,
-      });
+      const hash = encodeUrlState(this.snapshot());
       history.replaceState(null, '', '#' + hash);
     };
     if (this.urlTimer) clearTimeout(this.urlTimer);
@@ -484,6 +512,7 @@ class App {
       sps: this.sps,
       preset: this.presetId,
       params: this.params,
+      cm: this.colormapId,
     };
   }
 
@@ -609,7 +638,7 @@ class App {
   }
 
   private exportPng(): void {
-    const url = this.renderer.exportPNG(this.sim.render());
+    const url = this.renderer.exportPNG(this.renderModel());
     if (!url) return;
     const a = el('a', {}) as HTMLAnchorElement;
     a.href = url;
@@ -650,7 +679,7 @@ class App {
       }
     }
 
-    this.renderer.draw(this.sim.render());
+    this.renderer.draw(this.renderModel());
     if (this.hovering && this.sim.paint) {
       this.renderer.drawCursor(this.hoverX, this.hoverY, this.brushRadius, this.brushCss());
     }

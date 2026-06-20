@@ -15,6 +15,7 @@
 
 import type { Params, ParamValue, SystemDef } from '../core/types';
 import { paramsForPreset } from '../core/types';
+import { DEFAULT_COLORMAP_ID, isColormapId } from '../render/colormaps';
 
 export interface UrlState {
   sys: string;
@@ -22,6 +23,8 @@ export interface UrlState {
   sps: number;
   preset?: string;
   params: Params;
+  /** Cosmetic colormap id for field systems; omitted when it is the default. */
+  cm?: string;
 }
 
 const PARAM_PREFIX = 'p.';
@@ -32,6 +35,11 @@ export function encodeUrlState(state: UrlState): string {
   q.set('seed', String(state.seed));
   q.set('sps', String(state.sps));
   if (state.preset) q.set('preset', state.preset);
+  // The colormap is purely cosmetic, so only non-default choices hit the URL —
+  // default runs keep the tidy permalink they shipped with.
+  if (state.cm && state.cm !== DEFAULT_COLORMAP_ID && isColormapId(state.cm)) {
+    q.set('cm', state.cm);
+  }
   for (const [k, v] of Object.entries(state.params)) {
     q.set(PARAM_PREFIX + k, encodeValue(v));
   }
@@ -55,6 +63,9 @@ export function decodeUrlState(
   const preset =
     presetRaw && sys.presets?.some((p) => p.id === presetRaw) ? presetRaw : undefined;
 
+  const cmRaw = q.get('cm') ?? undefined;
+  const cm = cmRaw && isColormapId(cmRaw) ? cmRaw : undefined;
+
   // Baseline = defaults with the chosen preset applied; explicit URL params win.
   const baseline = paramsForPreset(sys, preset);
   const params: Params = {};
@@ -63,7 +74,7 @@ export function decodeUrlState(
     params[spec.key] = raw == null ? baseline[spec.key]! : coerce(spec, raw);
   }
 
-  return { sys: sysId, seed, sps, preset, params };
+  return { sys: sysId, seed, sps, preset, params, cm };
 }
 
 function encodeValue(v: ParamValue): string {

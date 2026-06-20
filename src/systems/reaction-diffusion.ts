@@ -1,7 +1,8 @@
 import type { Params, PaintInfo, RenderModel, Simulation, SystemDef } from '../core/types';
-import { numParam, rgba, strParam } from '../core/types';
+import { numParam, strParam } from '../core/types';
 import { hashParts } from '../core/hash';
 import { mulberry32 } from '../core/prng';
+import { DEFAULT_COLORMAP } from '../render/colormaps';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Gray–Scott reaction–diffusion (Pearson, 1993).
@@ -71,43 +72,6 @@ export function reactStep(
   return [nu, nv];
 }
 
-/**
- * Build the dark → teal → mint → white colormap once. Mirrors lenia's ramp so
- * the gallery reads consistently: v=0 is near-black void, the peak is mint-white.
- */
-function buildColormap(): Uint32Array {
-  const cm = new Uint32Array(256);
-  const stops: Array<{ t: number; r: number; g: number; b: number }> = [
-    { t: 0.0, r: 6, g: 9, b: 14 }, // near-black background
-    { t: 0.35, r: 14, g: 64, b: 82 }, // deep teal
-    { t: 0.7, r: 60, g: 200, b: 168 }, // mint
-    { t: 1.0, r: 232, g: 255, b: 244 }, // near-white highlight
-  ];
-  for (let i = 0; i < 256; i++) {
-    const v = i / 255;
-    let lo = stops[0]!;
-    let hi = stops[stops.length - 1]!;
-    for (let s = 0; s < stops.length - 1; s++) {
-      const a = stops[s]!;
-      const b = stops[s + 1]!;
-      if (v >= a.t && v <= b.t) {
-        lo = a;
-        hi = b;
-        break;
-      }
-    }
-    const span = hi.t - lo.t || 1;
-    const frac = (v - lo.t) / span;
-    const r = Math.round(lo.r + (hi.r - lo.r) * frac);
-    const g = Math.round(lo.g + (hi.g - lo.g) * frac);
-    const b = Math.round(lo.b + (hi.b - lo.b) * frac);
-    cm[i] = rgba(r, g, b);
-  }
-  return cm;
-}
-
-const COLORMAP = buildColormap();
-
 export class ReactionDiffusionSim implements Simulation {
   readonly width: number;
   readonly height: number;
@@ -141,7 +105,7 @@ export class ReactionDiffusionSim implements Simulation {
     this.uNext = new Float32Array(n);
     this.vNext = new Float32Array(n);
     this.fieldData = new Float32Array(n);
-    this.model = { kind: 'field', width, height, data: this.fieldData, colormap: COLORMAP };
+    this.model = { kind: 'field', width, height, data: this.fieldData, colormap: DEFAULT_COLORMAP };
     // Quiescent ground state: U saturated, V absent.
     this.u.fill(1);
     this.v.fill(0);

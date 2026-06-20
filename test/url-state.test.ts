@@ -65,6 +65,26 @@ describe('url-state', () => {
     const back = decodeUrlState(`sys=${sys.id}&seed=2&sps=15&p.bogus=1`, getSystem)!;
     expect('bogus' in back.params).toBe(false);
   });
+
+  it('round-trips a non-default colormap and omits the default from the URL', () => {
+    const sys = getSystem('lenia')!;
+    const base = { sys: sys.id, seed: 1, sps: 15, preset: undefined, params: {} };
+
+    const withMap = encodeUrlState({ ...base, cm: 'viridis' });
+    expect(withMap).toContain('cm=viridis');
+    expect(decodeUrlState(withMap, getSystem)!.cm).toBe('viridis');
+
+    // The default colormap is cosmetic noise — it must not bloat the permalink.
+    const withDefault = encodeUrlState({ ...base, cm: 'teal' });
+    expect(withDefault).not.toContain('cm=');
+    expect(decodeUrlState(withDefault, getSystem)!.cm).toBeUndefined();
+  });
+
+  it('ignores an unknown colormap id', () => {
+    const sys = systems[0]!;
+    const back = decodeUrlState(`sys=${sys.id}&seed=1&sps=15&cm=not-a-map`, getSystem)!;
+    expect(back.cm).toBeUndefined();
+  });
 });
 
 function defaultsOf(id: string): Record<string, number | string | boolean> {

@@ -1,7 +1,8 @@
 import type { Params, PaintInfo, RenderModel, Simulation, SystemDef } from '../core/types';
-import { numParam, rgba, strParam } from '../core/types';
+import { numParam, strParam } from '../core/types';
 import { hashParts } from '../core/hash';
 import { mulberry32 } from '../core/prng';
+import { DEFAULT_COLORMAP } from '../render/colormaps';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lenia — a continuous cellular automaton (Bert Wang-Chak Chan, 2018).
@@ -69,42 +70,6 @@ export function buildKernel(R: number): KernelTap[] {
   }
   return taps;
 }
-
-/** Build the dark → teal → mint → white colormap once. */
-function buildColormap(): Uint32Array {
-  const cm = new Uint32Array(256);
-  // Anchor colours of the ramp; v=0 is near-black so empty space reads as void.
-  const stops: Array<{ t: number; r: number; g: number; b: number }> = [
-    { t: 0.0, r: 6, g: 9, b: 14 }, // near-black background
-    { t: 0.35, r: 14, g: 64, b: 82 }, // deep teal
-    { t: 0.7, r: 60, g: 200, b: 168 }, // mint
-    { t: 1.0, r: 232, g: 255, b: 244 }, // near-white highlight
-  ];
-  for (let i = 0; i < 256; i++) {
-    const v = i / 255;
-    // Find the bracketing pair of stops for this normalised value.
-    let lo = stops[0]!;
-    let hi = stops[stops.length - 1]!;
-    for (let s = 0; s < stops.length - 1; s++) {
-      const a = stops[s]!;
-      const b = stops[s + 1]!;
-      if (v >= a.t && v <= b.t) {
-        lo = a;
-        hi = b;
-        break;
-      }
-    }
-    const span = hi.t - lo.t || 1;
-    const f = (v - lo.t) / span;
-    const r = Math.round(lo.r + (hi.r - lo.r) * f);
-    const g = Math.round(lo.g + (hi.g - lo.g) * f);
-    const b = Math.round(lo.b + (hi.b - lo.b) * f);
-    cm[i] = rgba(r, g, b);
-  }
-  return cm;
-}
-
-const COLORMAP = buildColormap();
 
 export class LeniaSim implements Simulation {
   readonly width: number;
@@ -184,7 +149,7 @@ export class LeniaSim implements Simulation {
   }
 
   render(): RenderModel {
-    return { kind: 'field', width: this.width, height: this.height, data: this.a, colormap: COLORMAP };
+    return { kind: 'field', width: this.width, height: this.height, data: this.a, colormap: DEFAULT_COLORMAP };
   }
 
   hash(): string {
