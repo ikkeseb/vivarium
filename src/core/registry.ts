@@ -3,6 +3,7 @@ import { conwaySystem } from '../systems/conway';
 import { lifeRulesSystem } from '../systems/life-rules';
 import { generationsSystem } from '../systems/generations';
 import { cyclicSystem } from '../systems/cyclic';
+import { elementarySystem } from '../systems/elementary';
 
 // The gallery. Systems are registered here in display order.
 export const systems: ReadonlyArray<SystemDef> = [
@@ -10,6 +11,7 @@ export const systems: ReadonlyArray<SystemDef> = [
   lifeRulesSystem,
   generationsSystem,
   cyclicSystem,
+  elementarySystem,
 ];
 
 export function getSystem(id: string): SystemDef | undefined {
