@@ -271,6 +271,7 @@ export const leniaSystem: SystemDef = {
     "Conway's integer neighbour counts. The result is fluid, organic structure — and, with " +
     'the right parameters, self-propelling "creatures" such as the Orbium glider.',
   category: 'continuous',
+  renderKind: 'field',
   params: [
     { kind: 'int', key: 'width', label: 'Width', min: 48, max: 200, step: 1, default: 120 },
     { kind: 'int', key: 'height', label: 'Height', min: 48, max: 200, step: 1, default: 120 },

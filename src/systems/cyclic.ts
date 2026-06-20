@@ -231,6 +231,7 @@ export const cyclicSystem: SystemDef = {
     'spiral waves and rotating "demons". Greenberg-Hastings excitable media is the ' +
     '3-state special case.',
   category: 'classic',
+  renderKind: 'cells',
   params: [
     { kind: 'int', key: 'states', label: 'States', min: 3, max: 16, step: 1, default: 12 },
     { kind: 'int', key: 'threshold', label: 'Threshold', min: 1, max: 8, step: 1, default: 1 },

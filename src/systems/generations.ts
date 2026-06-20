@@ -216,6 +216,7 @@ export const generationsSystem: SystemDef = {
     "which gives Brian's Brain its restless gliders and Star Wars its drifting ships. " +
     'Rule format is S/B/C — survival counts, birth counts, then the number of states.',
   category: 'classic',
+  renderKind: 'cells',
   // Build brush metadata for the default Brian's Brain rule (C=3).
   brushStates: parseGenerations('/2/3').states,
   brushColors: Array.from(buildPalette(parseGenerations('/2/3').states), (v) => rgbaToCss(v)),

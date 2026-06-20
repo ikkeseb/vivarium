@@ -439,6 +439,7 @@ export const particleLifeSystem: SystemDef = {
     'blobs — life-like structure with no biology at all. Tweak the matrix via the ' +
     'seed, or paint a species cluster onto the canvas.',
   category: 'particles',
+  renderKind: 'particles',
   brushStates: 5,
   brushColors: buildBrushColors(5),
   params: [

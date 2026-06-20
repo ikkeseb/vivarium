@@ -316,6 +316,7 @@ export const langtonSystem: SystemDef = {
     'the alphabet L/R/U/N (one letter per colour) yield wildly different worlds — try ' +
     'RLR, the LLRRRLRLRLLR highway, or a six-ant swarm.',
   category: 'agent',
+  renderKind: 'cells',
   brushStates: BRUSH_CAP,
   brushColors: ['#080b11', '#5ef2c4', '#f2c45e', '#7c8cf2', '#f25e8c', '#5ef27c', '#c45ef2', '#f2925e'],
   params: [

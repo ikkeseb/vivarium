@@ -141,6 +141,7 @@ export const elementarySystem: SystemDef = {
     'scrolls upward, newest generation at the bottom. Rule 30 is chaotic, 90 draws a ' +
     'Sierpiński triangle, and 110 is Turing-complete.',
   category: '1d',
+  renderKind: 'cells',
   brushStates: 2,
   brushColors: ['#0a0e14', '#5ef2c4'],
   params: [

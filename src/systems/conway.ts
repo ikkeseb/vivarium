@@ -14,6 +14,7 @@ export const conwaySystem: SystemDef = {
     'neighbours under the rule B3/S23. Despite the trivial rule it is Turing-complete. ' +
     'Load a glider, a Gosper gun, or paint your own soup.',
   category: 'classic',
+  renderKind: 'cells',
   brushStates: 2,
   brushColors: ['#0a0e14', '#5ef2c4'],
   params: [

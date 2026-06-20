@@ -176,6 +176,12 @@ export interface SystemDef {
   /** Longer prose description shown in the control panel. */
   description: string;
   category: SystemCategory;
+  /**
+   * The render shape this system produces, declared statically so the UI can lay
+   * out (e.g. show the field colormap picker) without constructing a simulation —
+   * the live sim now lives in a worker and is not synchronously inspectable.
+   */
+  renderKind: RenderModel['kind'];
   params: ReadonlyArray<ParamSpec>;
   presets?: ReadonlyArray<Preset>;
   /**

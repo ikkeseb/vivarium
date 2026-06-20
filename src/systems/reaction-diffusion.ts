@@ -307,6 +307,7 @@ export const reactionDiffusionSystem: SystemDef = {
     'coral and dividing blobs that Alan Turing predicted as the basis of biological morphogenesis. ' +
     'Sweep f and k to roam between regimes, or paint seeds of V to nucleate your own fronts.',
   category: 'continuous',
+  renderKind: 'field',
   params: [
     { kind: 'int', key: 'width', label: 'Width', min: 64, max: 256, step: 1, default: 160 },
     { kind: 'int', key: 'height', label: 'Height', min: 64, max: 256, step: 1, default: 120 },

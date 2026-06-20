@@ -1,13 +1,12 @@
 import { el, clear } from './dom';
 import { CanvasRenderer } from '../render/renderer';
 import { systems, getSystem } from '../core/registry';
-import type { ParamSpec, ParamValue, Params, RenderModel, Simulation, SystemDef } from '../core/types';
+import type { ParamSpec, ParamValue, Params, SystemDef } from '../core/types';
 import { paramsForPreset } from '../core/types';
 import { encodeUrlState, decodeUrlState, SPS_MIN, SPS_MAX, type UrlState } from './url-state';
 import { makeThumbnail } from './thumbnails';
 import { COLORMAPS, DEFAULT_COLORMAP_ID, colormapLut, isColormapId } from '../render/colormaps';
-
-const MAX_STEPS_PER_FRAME = 240;
+import { SimClient } from '../sim/sim-client';
 
 interface Control {
   set(v: ParamValue): void;
@@ -34,7 +33,7 @@ class App {
   private params: Params;
   private seed = 1;
   private presetId: string | undefined;
-  private sim: Simulation;
+  private client: SimClient;
 
   private playing = true;
   private sps = 15;
@@ -54,8 +53,9 @@ class App {
   private urlTimer = 0;
 
   private recreateRaf = 0;
-  private acc = 0;
-  private lastTime = 0;
+  // Stepping lives in the worker now; the main loop only paces `run` ticks.
+  private pendingRun = false;
+  private lastRunSent = 0;
   private frames = 0;
   private fpsClock = 0;
   private hashClock = 0;
@@ -82,7 +82,11 @@ class App {
     this.helpOverlay = this.buildHelpOverlay();
     root.append(this.helpOverlay);
     this.renderer = new CanvasRenderer(canvas);
-    this.sim = this.sys.create(this.params, this.seed, this.presetId);
+    this.client = new SimClient(colormapLut(this.colormapId));
+    // Release the run guard only when a *run* tick returns — a paint/step/clear
+    // frame interleaved ahead of an in-flight run must not let a second run out.
+    this.client.onFrame = (fromRun) => { if (fromRun) this.pendingRun = false; };
+    this.client.create(this.sys.id, this.params, this.seed, this.presetId);
 
     this.buildGallery();
     this.buildPanel();
@@ -91,7 +95,7 @@ class App {
     this.attachHashSync();
     this.syncUrl(true); // canonicalise the URL on first load
 
-    this.lastTime = performance.now();
+    this.lastRunSent = performance.now();
     requestAnimationFrame((t) => this.loop(t));
   }
 
@@ -333,12 +337,13 @@ class App {
     }
 
     // Colormap — cosmetic, field systems only; applied live with no rebuild.
-    if (this.sim.render().kind === 'field') {
+    if (this.sys.renderKind === 'field') {
       const select = el('select', {
         class: 'viv-select',
         on: {
           change: (e) => {
             this.colormapId = (e.target as HTMLSelectElement).value;
+            this.client.setColormap(colormapLut(this.colormapId));
             this.syncUrl();
           },
         },
@@ -520,8 +525,11 @@ class App {
 
   private recreate(): void {
     this.cancelPendingRecreate();
-    this.sim = this.sys.create(this.params, this.seed, this.presetId);
-    this.updateStatus();
+    // The new epoch invalidates any run frame still in flight (it will be dropped
+    // as stale and never release the guard), so clear it here to avoid a stall.
+    this.pendingRun = false;
+    this.client.setColormap(colormapLut(this.colormapId));
+    this.client.create(this.sys.id, this.params, this.seed, this.presetId);
     this.syncUrl();
   }
 
@@ -551,18 +559,6 @@ class App {
       cancelAnimationFrame(this.recreateRaf);
       this.recreateRaf = 0;
     }
-  }
-
-  /**
-   * The current render model with the chosen colormap applied. Swapping the LUT
-   * on a field model is purely cosmetic — it never touches simulation state, so
-   * `hash()` and determinism are unaffected (the model object is persistent, so
-   * this is a single pointer write per frame, not an allocation).
-   */
-  private renderModel(): RenderModel {
-    const model = this.sim.render();
-    if (model.kind === 'field') model.colormap = colormapLut(this.colormapId);
-    return model;
   }
 
   // ── Shareable permalinks ───────────────────────────────────────────────────
@@ -654,8 +650,7 @@ class App {
   }
 
   private stepOnce(): void {
-    this.sim.step();
-    this.updateStatus();
+    this.client.step();
   }
 
   private reset(): void {
@@ -664,9 +659,12 @@ class App {
 
   private clearSim(): void {
     this.cancelPendingRecreate();
-    if (this.sim.clear) {
-      this.sim.clear();
-      this.updateStatus();
+    // Favour the in-worker clear() path during cold-start: before the first frame
+    // lands `mirror` is null, but the worker processes `create` before `clear`
+    // (FIFO), so a clear() command resolves correctly. The `recreate('empty')`
+    // fallback is only for a sim with no clear() — never the case mid-cold-start.
+    if (!this.client.mirror || this.client.mirror.caps.clear) {
+      this.client.clear();
     } else {
       this.presetId = 'empty';
       this.recreate();
@@ -687,10 +685,10 @@ class App {
   private attachCanvasEvents(): void {
     const c = this.canvas;
     const paintAt = (e: PointerEvent): void => {
-      if (!this.sim.paint) return;
+      if (!this.client.mirror?.caps.paint) return;
       this.cancelPendingRecreate(); // a brush stroke must survive a just-dragged slider's queued rebuild
       const { x, y } = this.renderer.screenToWorld(e.clientX, e.clientY);
-      this.sim.paint({ x, y, value: this.brushValue, radius: this.brushRadius });
+      this.client.paint({ x, y, value: this.brushValue, radius: this.brushRadius });
     };
 
     // Wheel = zoom toward the cursor.
@@ -746,11 +744,13 @@ class App {
   }
 
   private exportPng(): void {
-    const url = this.renderer.exportPNG(this.renderModel());
+    const m = this.client.mirror;
+    if (!m) return;
+    const url = this.renderer.exportPNG(m.model);
     if (!url) return;
     const a = el('a', {}) as HTMLAnchorElement;
     a.href = url;
-    a.download = `vivarium_${this.sys.id}_seed${this.seed}_gen${this.sim.generation}_${this.sim.hash()}.png`;
+    a.download = `vivarium_${this.sys.id}_seed${this.seed}_gen${m.generation}_${m.hash}.png`;
     a.click();
   }
 
@@ -781,22 +781,26 @@ class App {
   // ── Run loop ─────────────────────────────────────────────────────────────────
 
   private loop(now: number): void {
-    const dt = Math.min(0.1, (now - this.lastTime) / 1000);
-    this.lastTime = now;
-
+    // Pace the worker: keep at most one `run` tick in flight, carrying the
+    // wall-time since the last one was sent so no sim time is lost while it
+    // computes. rAF gates this, so a backgrounded tab stops stepping entirely.
     if (this.playing) {
-      this.acc += dt * this.sps;
-      let steps = Math.floor(this.acc);
-      if (steps > 0) {
-        this.acc -= steps;
-        if (steps > MAX_STEPS_PER_FRAME) steps = MAX_STEPS_PER_FRAME;
-        for (let i = 0; i < steps; i++) this.sim.step();
+      if (!this.pendingRun) {
+        const dt = Math.min(0.1, (now - this.lastRunSent) / 1000);
+        this.client.run(dt, this.sps);
+        this.pendingRun = true;
+        this.lastRunSent = now;
       }
+    } else {
+      this.lastRunSent = now; // keep fresh so unpausing doesn't trigger a catch-up jump
     }
 
-    this.renderer.draw(this.renderModel());
-    if (this.hovering && this.sim.paint) {
-      this.renderer.drawCursor(this.hoverX, this.hoverY, this.brushRadius, this.brushCss());
+    const mirror = this.client.mirror;
+    if (mirror) {
+      this.renderer.draw(mirror.model);
+      if (this.hovering && mirror.caps.paint) {
+        this.renderer.drawCursor(this.hoverX, this.hoverY, this.brushRadius, this.brushCss());
+      }
     }
 
     this.frames++;
@@ -806,19 +810,24 @@ class App {
       this.frames = 0;
       this.fpsClock = now;
     }
-    if (now - this.hashClock >= 400) {
-      this.updateStatus();
-      this.hashClock = now;
-    } else {
-      this.genEl.textContent = String(this.sim.generation);
+    // hash/gen arrive precomputed in the frame, so this is a cheap string write;
+    // the hash is still throttled to avoid per-frame DOM churn.
+    if (mirror) {
+      if (now - this.hashClock >= 400) {
+        this.updateStatus();
+        this.hashClock = now;
+      } else {
+        this.genEl.textContent = String(mirror.generation);
+      }
     }
 
     requestAnimationFrame((t) => this.loop(t));
   }
 
   private updateStatus(): void {
-    this.genEl.textContent = String(this.sim.generation);
-    this.hashEl.textContent = this.sim.hash();
+    const m = this.client.mirror;
+    this.genEl.textContent = String(m ? m.generation : 0);
+    this.hashEl.textContent = m ? m.hash : '—';
   }
 }
 

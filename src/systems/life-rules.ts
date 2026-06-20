@@ -16,6 +16,7 @@ export const lifeRulesSystem: SystemDef = {
     'self-replicating pattern, Day & Night (B3678/S34678) is symmetric under ' +
     'on/off inversion, Seeds (B2/S) explodes, Replicator copies anything.',
   category: 'classic',
+  renderKind: 'cells',
   brushStates: 2,
   brushColors: ['#0a0e14', '#5ef2c4'],
   params: [
