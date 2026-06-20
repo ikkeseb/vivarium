@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`determinism — every registered system > conway: grid hash after 25 steps is pinned 1`] = `"ed2129cd"`;
+
+exports[`determinism — every registered system > cyclic: grid hash after 25 steps is pinned 1`] = `"d39f2b7a"`;
+
+exports[`determinism — every registered system > elementary: grid hash after 25 steps is pinned 1`] = `"1f87c3c4"`;
+
+exports[`determinism — every registered system > generations: grid hash after 25 steps is pinned 1`] = `"ea3c1c51"`;
+
+exports[`determinism — every registered system > langton: grid hash after 25 steps is pinned 1`] = `"243c4e67"`;
+
+exports[`determinism — every registered system > lenia: grid hash after 25 steps is pinned 1`] = `"ffeac26d"`;
+
+exports[`determinism — every registered system > life-rules: grid hash after 25 steps is pinned 1`] = `"b8fe97c1"`;
+
+exports[`determinism — every registered system > particle-life: grid hash after 25 steps is pinned 1`] = `"eca6e80c"`;
