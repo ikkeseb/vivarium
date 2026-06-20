@@ -27,6 +27,8 @@ class App {
   private playBtn: HTMLButtonElement;
   private helpOverlay!: HTMLElement;
   private helpCloseBtn!: HTMLButtonElement;
+  private safetyOverlay!: HTMLElement;
+  private safetyContinueBtn!: HTMLButtonElement;
   private lastFocus: HTMLElement | null = null;
 
   private sys: SystemDef;
@@ -69,6 +71,11 @@ class App {
     const restored = decodeUrlState(location.hash, getSystem);
     if (restored) this.adoptState(restored);
 
+    // Hold autoplay until the photosensitive notice is acknowledged, so no
+    // motion runs behind the warning on a first visit.
+    const needsSafety = !hasAckedSafety();
+    if (needsSafety) this.playing = false;
+
     const canvas = el('canvas', { class: 'viv-canvas' });
     this.canvas = canvas;
     this.galleryEl = el('div', { class: 'viv-gallery-list' });
@@ -81,6 +88,8 @@ class App {
     root.append(this.buildLayout());
     this.helpOverlay = this.buildHelpOverlay();
     root.append(this.helpOverlay);
+    this.safetyOverlay = this.buildSafetyNotice();
+    root.append(this.safetyOverlay);
     this.renderer = new CanvasRenderer(canvas);
     this.client = new SimClient(colormapLut(this.colormapId));
     // Release the run guard only when a *run* tick returns — a paint/step/clear
@@ -95,6 +104,7 @@ class App {
     this.attachHashSync();
     this.syncUrl(true); // canonicalise the URL on first load
 
+    this.maybeShowSafetyNotice();
     this.lastRunSent = performance.now();
     requestAnimationFrame((t) => this.loop(t));
   }
@@ -192,6 +202,72 @@ class App {
     } else {
       this.lastFocus?.focus?.();
       this.lastFocus = null;
+    }
+  }
+
+  /**
+   * A one-time photosensitive-seizure warning. Several systems (Cyclic CA,
+   * Brian's Brain, scrolling Rule 30, Particle Life) can strobe at high speed,
+   * so a first visit is greeted with a modal that gates autoplay until it is
+   * acknowledged; the acknowledgement is remembered in localStorage.
+   */
+  private buildSafetyNotice(): HTMLElement {
+    const title = el('h2', { class: 'viv-safety-title', id: 'viv-safety-title', text: 'Photosensitive warning' });
+    const body = el('p', {
+      class: 'viv-safety-body',
+      text:
+        'Some systems here produce rapidly flashing, strobing or high-contrast moving ' +
+        'patterns. If you have photosensitive epilepsy or are sensitive to flashing light, ' +
+        'take care — lower the speed, keep the window small, or sit back from the screen. ' +
+        'You can pause at any time with the Space bar.',
+    });
+    this.safetyContinueBtn = el('button', {
+      class: 'viv-btn viv-btn-primary',
+      text: 'I understand — continue',
+      on: { click: () => this.ackSafety() },
+    });
+    const card = el('div', { class: 'viv-help-card viv-safety-card' },
+      el('div', { class: 'viv-safety-head' },
+        el('span', { class: 'viv-safety-icon', text: '⚠' }),
+        title),
+      body,
+      el('div', { class: 'viv-safety-actions' }, this.safetyContinueBtn));
+    card.setAttribute('role', 'alertdialog');
+    card.setAttribute('aria-modal', 'true');
+    card.setAttribute('aria-labelledby', 'viv-safety-title');
+    // No backdrop-click or Escape dismissal: acknowledging is required. Trap Tab
+    // on the single focusable control.
+    const overlay = el('div', {
+      class: 'viv-help-overlay viv-safety-overlay',
+      on: {
+        keydown: (e) => {
+          if ((e as KeyboardEvent).key === 'Tab') {
+            e.preventDefault();
+            this.safetyContinueBtn.focus();
+          }
+        },
+      },
+    }, card);
+    return overlay;
+  }
+
+  private maybeShowSafetyNotice(): void {
+    if (hasAckedSafety()) return;
+    this.lastFocus = document.activeElement as HTMLElement | null;
+    this.safetyOverlay.classList.add('is-open');
+    this.safetyContinueBtn.focus();
+  }
+
+  private ackSafety(): void {
+    try { localStorage.setItem(SAFETY_KEY, '1'); } catch { /* private mode — show again next time */ }
+    this.safetyOverlay.classList.remove('is-open');
+    this.lastFocus?.focus?.();
+    this.lastFocus = null;
+    // Resume the autoplay that was held back while the notice was up.
+    if (!this.playing) {
+      this.playing = true;
+      this.playBtn.textContent = 'Pause';
+      this.lastRunSent = performance.now();
     }
   }
 
@@ -757,6 +833,9 @@ class App {
   private attachKeyboard(): void {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      // The safety notice must be acknowledged with the button; swallow every
+      // shortcut (including Space, which would otherwise start playback) until then.
+      if (this.safetyOverlay.classList.contains('is-open')) return;
       // While the help modal is up, only let it be dismissed — don't let the
       // shortcuts it documents mutate the sim hidden behind the backdrop.
       if (this.helpOverlay.classList.contains('is-open') && e.key !== 'Escape' && e.key !== '?') {
@@ -833,6 +912,13 @@ class App {
 
 function fmtNum(v: number, isInt: boolean, decimals = 2): string {
   return isInt ? String(Math.round(v)) : v.toFixed(decimals);
+}
+
+// Photosensitive notice acknowledgement, persisted across visits.
+const SAFETY_KEY = 'viv:safety-ack';
+
+function hasAckedSafety(): boolean {
+  try { return localStorage.getItem(SAFETY_KEY) === '1'; } catch { return false; }
 }
 
 // Speed slider runs on a logarithmic scale so the low end (1–20/s, where the
