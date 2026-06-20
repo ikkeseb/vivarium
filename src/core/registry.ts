@@ -5,6 +5,7 @@ import { generationsSystem } from '../systems/generations';
 import { cyclicSystem } from '../systems/cyclic';
 import { elementarySystem } from '../systems/elementary';
 import { langtonSystem } from '../systems/langton';
+import { leniaSystem } from '../systems/lenia';
 
 // The gallery. Systems are registered here in display order.
 export const systems: ReadonlyArray<SystemDef> = [
@@ -14,6 +15,7 @@ export const systems: ReadonlyArray<SystemDef> = [
   cyclicSystem,
   elementarySystem,
   langtonSystem,
+  leniaSystem,
 ];
 
 export function getSystem(id: string): SystemDef | undefined {
