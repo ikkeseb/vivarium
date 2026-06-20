@@ -86,3 +86,7 @@ Pick a system from the gallery, then play/pause/step, adjust speed, randomize th
 seed, choose a preset, edit parameters live, and click-drag on the canvas to
 paint cells (or particles). Keyboard: `space` play/pause, `s` step, `r` reset,
 `n` randomize, `c` clear.
+
+## License
+
+[MIT](LICENSE).
