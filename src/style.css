@@ -179,6 +179,9 @@ html, body {
 }
 .viv-check-hint { font-size: 11px; color: var(--faint); }
 
+.viv-field-wrap { display: flex; flex-direction: column; gap: 4px; }
+.viv-field-help { margin: 0; font-size: 11px; line-height: 1.45; color: var(--faint); }
+
 /* ── Controls ───────────────────────────────────────────────────────────── */
 .viv-btn {
   font-family: var(--sans);
@@ -268,6 +271,46 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .viv-share-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .viv-share-row .viv-btn { width: 100%; }
 .viv-share-note { margin: 0; font-size: 11px; line-height: 1.45; color: var(--faint); }
+
+/* ── Keyboard help overlay ──────────────────────────────────────────────── */
+.viv-help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 10, 0.72);
+  backdrop-filter: blur(2px);
+}
+.viv-help-overlay.is-open { display: flex; }
+.viv-help-card {
+  width: min(420px, calc(100vw - 40px));
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  padding: 18px;
+}
+.viv-help-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.viv-help-title { margin: 0; font-size: 15px; font-weight: 600; }
+.viv-help-list { display: flex; flex-direction: column; gap: 8px; }
+.viv-help-row { display: flex; align-items: center; gap: 12px; }
+.viv-help-desc { font-size: 13px; color: var(--muted); }
+.viv-kbd {
+  flex: 0 0 auto;
+  min-width: 96px;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: center;
+  padding: 4px 8px;
+  color: var(--accent);
+  background: var(--panel-2);
+  border: 1px solid var(--border-2);
+  border-radius: 5px;
+}
 
 /* ── Focus visibility (keyboard a11y) ───────────────────────────────────── */
 :focus-visible {

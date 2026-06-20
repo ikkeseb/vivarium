@@ -26,6 +26,7 @@ class App {
   private hashEl: HTMLElement;
   private fpsEl: HTMLElement;
   private playBtn: HTMLButtonElement;
+  private helpOverlay!: HTMLElement;
 
   private sys: SystemDef;
   private params: Params;
@@ -76,6 +77,8 @@ class App {
     this.playBtn = el('button', { class: 'viv-btn viv-btn-primary', text: 'Pause' });
 
     root.append(this.buildLayout());
+    this.helpOverlay = this.buildHelpOverlay();
+    root.append(this.helpOverlay);
     this.renderer = new CanvasRenderer(canvas);
     this.sim = this.sys.create(this.params, this.seed, this.presetId);
 
@@ -115,12 +118,55 @@ class App {
 
     const stage = el('main', { class: 'viv-stage' },
       this.canvas,
-      el('div', { class: 'viv-hint', text: 'drag to paint · scroll to zoom · alt-drag to pan · double-click to reset' }),
+      el('div', { class: 'viv-hint', text: 'drag to paint · scroll to zoom · alt-drag to pan · ? for shortcuts' }),
     );
 
     const panel = el('aside', { class: 'viv-panel' }, this.panelEl);
 
     return el('div', { class: 'viv-root' }, header, gallery, stage, panel);
+  }
+
+  /** A modal cheat-sheet of every keyboard and mouse shortcut, toggled with "?". */
+  private buildHelpOverlay(): HTMLElement {
+    const rows: Array<[string, string]> = [
+      ['Space', 'Play / pause'],
+      ['S', 'Step one generation'],
+      ['R', 'Reset (re-seed)'],
+      ['N', 'New random seed'],
+      ['C', 'Clear the grid'],
+      ['F', 'Fit view'],
+      ['E', 'Export PNG'],
+      ['+ / −', 'Zoom in / out'],
+      ['?', 'Toggle this help'],
+      ['Drag', 'Paint cells'],
+      ['Scroll', 'Zoom to cursor'],
+      ['Alt-drag', 'Pan the view'],
+      ['Double-click', 'Reset the view'],
+    ];
+    const list = el('div', { class: 'viv-help-list' });
+    for (const [k, d] of rows) {
+      list.append(el('div', { class: 'viv-help-row' },
+        el('kbd', { class: 'viv-kbd', text: k }),
+        el('span', { class: 'viv-help-desc', text: d })));
+    }
+    const card = el('div', { class: 'viv-help-card' },
+      el('div', { class: 'viv-help-head' },
+        el('h2', { class: 'viv-help-title', text: 'Shortcuts' }),
+        el('button', {
+          class: 'viv-btn viv-btn-icon', text: '✕', title: 'Close',
+          on: { click: () => this.toggleHelp(false) },
+        })),
+      list);
+    const overlay = el('div', {
+      class: 'viv-help-overlay',
+      on: { click: (e) => { if (e.target === overlay) this.toggleHelp(false); } },
+    }, card);
+    return overlay;
+  }
+
+  private toggleHelp(force?: boolean): void {
+    const open = force ?? !this.helpOverlay.classList.contains('is-open');
+    this.helpOverlay.classList.toggle('is-open', open);
   }
 
   private buildGallery(): void {
@@ -209,13 +255,13 @@ class App {
     );
     this.panelEl.append(this.section('controls', transport));
 
-    // Speed
+    // Speed (logarithmic — see spsToPos / posToSps)
     const speedReadout = el('span', { class: 'viv-readout', text: `${this.sps}/s` });
     const speed = el('input', {
-      type: 'range', min: 1, max: 200, step: 1, value: this.sps,
+      type: 'range', min: 0, max: SPS_TICKS, step: 1, value: spsToPos(this.sps),
       on: {
         input: (e) => {
-          this.sps = Number((e.target as HTMLInputElement).value);
+          this.sps = posToSps(Number((e.target as HTMLInputElement).value));
           speedReadout.textContent = `${this.sps}/s`;
           this.syncUrl();
         },
@@ -311,6 +357,14 @@ class App {
       el('div', { class: 'viv-field-control' }, ...controls));
   }
 
+  /** Append the authored `help` text below a control, when present. */
+  private withHelp(control: HTMLElement, help?: string): HTMLElement {
+    if (!help) return control;
+    return el('div', { class: 'viv-field-wrap' },
+      control,
+      el('p', { class: 'viv-field-help', text: help }));
+  }
+
   private buildParamControl(spec: ParamSpec): HTMLElement {
     const key = spec.key;
     switch (spec.kind) {
@@ -338,7 +392,7 @@ class App {
             readout.textContent = fmtNum(Number(v), isInt, dec);
           },
         });
-        return this.field(spec.label, input, readout);
+        return this.withHelp(this.field(spec.label, input, readout), spec.help);
       }
       case 'bool': {
         const input = el('input', {
@@ -374,7 +428,7 @@ class App {
         this.controls.set(key, {
           set: (v) => { (select as HTMLSelectElement).value = String(v); },
         });
-        return this.field(spec.label, select);
+        return this.withHelp(this.field(spec.label, select), spec.help);
       }
       case 'rule': {
         const input = el('input', {
@@ -390,7 +444,7 @@ class App {
         this.controls.set(key, {
           set: (v) => { (input as HTMLInputElement).value = String(v); },
         });
-        return this.field(spec.label, input);
+        return this.withHelp(this.field(spec.label, input), spec.help);
       }
     }
   }
@@ -679,6 +733,8 @@ class App {
         case 'e': this.exportPng(); break;
         case '+': case '=': this.zoomCenter(1.2); break;
         case '-': case '_': this.zoomCenter(1 / 1.2); break;
+        case '?': e.preventDefault(); this.toggleHelp(); break;
+        case 'Escape': this.toggleHelp(false); break;
       }
     });
   }
@@ -729,6 +785,24 @@ class App {
 
 function fmtNum(v: number, isInt: boolean, decimals = 2): string {
   return isInt ? String(Math.round(v)) : v.toFixed(decimals);
+}
+
+// Speed slider runs on a logarithmic scale so the low end (1–20/s, where the
+// dynamics are actually watchable) gets the bulk of the travel instead of being
+// crammed into the first few pixels of a linear 1–200 track. `sps` itself stays
+// linear everywhere else (URL, run loop); only the slider position is warped.
+const SPS_MIN = 1;
+const SPS_MAX = 200;
+const SPS_TICKS = 1000;
+
+function spsToPos(sps: number): number {
+  const s = sps < SPS_MIN ? SPS_MIN : sps > SPS_MAX ? SPS_MAX : sps;
+  return Math.round((SPS_TICKS * Math.log(s / SPS_MIN)) / Math.log(SPS_MAX / SPS_MIN));
+}
+
+function posToSps(pos: number): number {
+  const s = SPS_MIN * Math.pow(SPS_MAX / SPS_MIN, pos / SPS_TICKS);
+  return Math.max(SPS_MIN, Math.min(SPS_MAX, Math.round(s)));
 }
 
 /** Decimal places implied by a slider step (0.001 → 3), so readouts aren't lossy. */
