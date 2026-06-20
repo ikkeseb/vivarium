@@ -1,0 +1,10 @@
+# Normalise line endings to LF in the repo so Windows checkouts stop showing
+# phantom CRLF modifications (e.g. the Vitest snapshot churning on every pull).
+* text=auto eol=lf
+
+# Treat image assets as binary.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
