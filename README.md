@@ -5,7 +5,7 @@ cellular-automata and life systems, each a self-contained module with a seedable
 initial state and a deterministic step function. Pure TypeScript (strict) + Vite,
 no backend, no GPU, no runtime dependencies. Light runtime, heavy build.
 
-**[▶ Live demo](https://vivarium.nuez.no)**
+Not hosted: `vivarium.nuez.no` was taken down on 2026-09-24.
 
 ![vivarium running Conway's Life](screens/_hero.png)
 
